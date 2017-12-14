@@ -24,10 +24,8 @@ import org.jetbrains.kotlin.backend.common.ir.ir2string
 import org.jetbrains.kotlin.backend.konan.*
 import org.jetbrains.kotlin.backend.konan.descriptors.*
 import org.jetbrains.kotlin.backend.konan.ir.*
-import org.jetbrains.kotlin.backend.konan.library.impl.buildLibrary
 import org.jetbrains.kotlin.backend.konan.objcexport.ObjCExport
 import org.jetbrains.kotlin.backend.konan.optimizations.*
-import org.jetbrains.kotlin.backend.konan.util.getValueOrNull
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.incremental.components.NoLookupLocation
@@ -93,7 +91,8 @@ internal fun emitLLVM(context: Context) {
         val lifetimes = mutableMapOf<IrElement, Lifetime>()
         val codegenVisitor = CodeGeneratorVisitor(context, lifetimes)
         phaser.phase(KonanPhase.ESCAPE_ANALYSIS) {
-            EscapeAnalysis.computeLifetimes(irModule, context, codegenVisitor.codegen, lifetimes)
+            val callGraph = CallGraphBuilder(context, moduleDFG!!, externalModulesDFG!!).build()
+            EscapeAnalysis.computeLifetimes(moduleDFG!!, externalModulesDFG!!, callGraph, lifetimes)
         }
 
         phaser.phase(KonanPhase.CODEGEN) {
@@ -1641,7 +1640,7 @@ internal class CodeGeneratorVisitor(val context: Context, val lifetimes: Map<IrE
                     val callee = expression as IrCall
                     val initializer = callee.getValueArgument(1) as IrCall
                     val thiz = evaluateExpression(callee.getValueArgument(0)!!)
-                    evaluateSimpleFunctionCall(initializer.descriptor, listOf(thiz) + evaluateExplicitArgs(initializer), lifetimes[initializer]!!)
+                    evaluateSimpleFunctionCall(initializer.descriptor, listOf(thiz) + evaluateExplicitArgs(initializer), resultLifetime(initializer))
                     return codegen.theUnitInstanceRef.llvm
                 }
             }
@@ -2068,7 +2067,7 @@ internal class CodeGeneratorVisitor(val context: Context, val lifetimes: Map<IrE
                 val typeParameterT = context.ir.symbols.createUninitializedInstance.descriptor.typeParameters[0]
                 val enumClass = callee.getTypeArgument(typeParameterT)!!
                 val enumClassDescriptor = enumClass.constructor.declarationDescriptor as ClassDescriptor
-                functionGenerationContext.allocInstance(typeInfoForAllocation(enumClassDescriptor), lifetimes[callee]!!)
+                functionGenerationContext.allocInstance(typeInfoForAllocation(enumClassDescriptor), resultLifetime(callee))
             }
 
             else -> TODO(callee.descriptor.original.toString())

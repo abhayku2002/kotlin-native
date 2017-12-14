@@ -91,7 +91,6 @@ internal fun produceOutput(context: Context) {
                 llvmModule,
                 nopack,
                 manifest,
-                context.escapeAnalysisResult.getValueOrNull()?.build()?.toByteArray(),
                 context.dataFlowGraph)
 
             context.library = library
